@@ -15,12 +15,19 @@ cur = conn.cursor(row_factory=dict_row)
 
 def get_rooms():
     cur.execute("""
-        SELECT room_id, room_name, capacity
-        FROM room
-        ORDER BY room_id
+        SELECT r.room_id,
+               r.room_name,
+               r.capacity,
+               b.building_name,
+               STRING_AGG(f.feature_name, ', ') AS features
+        FROM room r
+        JOIN building b ON r.building_id = b.building_id
+        LEFT JOIN room_feature rf ON r.room_id = rf.room_id
+        LEFT JOIN feature f ON rf.feature_id = f.feature_id
+        GROUP BY r.room_id, r.room_name, r.capacity, b.building_name
+        ORDER BY r.room_id
     """)
     return cur.fetchall()
-
 
 def get_reservations():
     cur.execute("""
@@ -66,30 +73,43 @@ def make_reservation(user_id, room_id, start_datetime, end_datetime):
 
     conn.commit()
 
+def render_header():
+    with ui.card().classes("w-full max-w-xl mx-auto p-6 shadow-lg border border-red-200 bg-gray-50"):
+        with ui.column().classes("items-center"):
+            ui.label("Library Room Scheduler").classes("text-h3 text-red-700 font-bold")
+            ui.label("Reserve study spaces easily").classes("text-sm text-gray-600")
+
 
 @ui.page('/')
 def homepage():
-    ui.label("Library Room Scheduler").classes("text-h4")
-    ui.label("Search available library rooms and make reservations.")
+    with ui.card().classes("w-full max-w-xl mx-auto p-6 shadow-lg"):
+        with ui.column().classes("items-center"):
+            ui.label("Library Room Scheduler").classes("text-h3 text-red-700 font-bold")
+            ui.label("Reserving Study Spaces Made Easily").classes("text-sm text-gray-600")
+    ui.label("Search available library rooms and make your reservations!")
 
-    ui.link("View Rooms", "/rooms")
-    ui.link("Make a Reservation", "/reserve")
-    ui.link("View Reservations", "/reservations")
+    ui.button("View Rooms", on_click=lambda: ui.navigate.to("/rooms")).classes("bg-black text-white w-64")
+    ui.button("Make a Reservation", on_click=lambda: ui.navigate.to("/reserve")).classes("bg-black text-white w-64")
+    ui.button("View Reservations", on_click=lambda: ui.navigate.to("/reservations")).classes("bg-black text-white w-64")
 
 
 @ui.page('/rooms')
 def rooms_page():
-    ui.label("Library Rooms").classes("text-h4")
+    render_header()
+
+    ui.label("Available Rooms").classes("text-h4 text-center w-full mt-4")
 
     columns = [
-        {'name': 'room_id', 'field': 'room_id', 'label': 'Room ID'},
-        {'name': 'room_name', 'field': 'room_name', 'label': 'Room Name'},
+        {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
+        {'name': 'building_name', 'field': 'building_name', 'label': 'Building'},
         {'name': 'capacity', 'field': 'capacity', 'label': 'Capacity'},
+        {'name': 'features', 'field': 'features', 'label': 'Features'},
     ]
 
-    ui.table(columns=columns, rows=get_rooms())
+    ui.table(columns=columns, rows=get_rooms()).classes("w-full max-w-4xl mx-auto mt-4")
 
-    ui.link("Back Home", "/")
+    with ui.row().classes("justify-center mt-6"):
+        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 hover:bg-gray-800")
 
 
 @ui.page('/reservations')
