@@ -4,6 +4,7 @@ import psycopg
 from psycopg.rows import dict_row
 from dbinfo import *
 from nicegui import ui
+
 from urllib.parse import parse_qs
 
 # Connect to database
@@ -48,19 +49,29 @@ def get_reservations():
 
 def get_available_rooms(start_datetime, end_datetime):
     cur.execute("""
-        SELECT room_id, room_name, capacity
-        FROM room
-        WHERE room_id NOT IN (
-            SELECT room_id
-            FROM reservation
-            WHERE status IN ('approved', 'pending')
-              AND start_datetime < %s
-              AND end_datetime > %s
-        )
-        ORDER BY room_id
-    """, [end_datetime, start_datetime])
-    return cur.fetchall()
+                SELECT r.room_id,
+                       r.room_name,
+                       r.capacity,
+                       b.building_name,
+                       STRING_AGG(f.feature_name, ', ') AS features
+                FROM room r
+                         JOIN building b ON r.building_id = b.building_id
+                         LEFT JOIN room_feature rf ON r.room_id = rf.room_id
+                         LEFT JOIN feature f ON rf.feature_id = f.feature_id
+                WHERE r.room_id NOT IN (SELECT room_id
+                                        FROM reservation
+                                        WHERE status IN ('approved', 'pending')
+                                          AND start_datetime < %s
+                                          AND end_datetime > %s)
+                  AND r.room_id NOT IN (SELECT room_id
+                                        FROM room_block
+                                        WHERE start_datetime < %s
+                                          AND end_datetime > %s)
+                GROUP BY r.room_id, r.room_name, r.capacity, b.building_name
+                ORDER BY r.room_id
+                """, [end_datetime, start_datetime, end_datetime, start_datetime])
 
+    return cur.fetchall()
 
 def make_reservation(user_id, room_id, start_datetime, end_datetime):
     cur.execute("""
@@ -98,7 +109,8 @@ def homepage():
 def rooms_page():
     render_header()
 
-    ui.label("Available Rooms").classes("text-h4 text-center w-full mt-4")
+    ui.label("All Rooms").classes("text-h4 text-center w-full mt-4")
+    ui.label("Click reserve to check availability and book a time")
 
     rooms = get_rooms()
 
@@ -113,9 +125,10 @@ def rooms_page():
                         ui.label(f"Features: {room['features']}")
 
                     ui.button(
-                        "Reserve",
-                        on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}")
-                    ).props("color=green")
+                        "RESERVE",
+                        on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}"),
+                        color="green"
+                    )
 
     with ui.row().classes("justify-center mt-6"):
         ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48")
@@ -139,8 +152,8 @@ def reservations_page():
 
 @ui.page('/reserve')
 def reserve_page():
-    selected_room = None
     room_id = ui.context.client.request.query_params.get('room_id')
+    selected_room = int(room_id) if room_id else None
 
     with ui.card() as step1_card:
         ui.label("Search for Available Rooms").classes("text-h5")
@@ -176,7 +189,9 @@ def reserve_page():
         columns = [
             {'name': 'room_id', 'field': 'room_id', 'label': 'Room ID'},
             {'name': 'room_name', 'field': 'room_name', 'label': 'Room Name'},
+            {'name': 'building_name', 'field': 'building_name', 'label': 'Building'},
             {'name': 'capacity', 'field': 'capacity', 'label': 'Capacity'},
+            {'name': 'features', 'field': 'features', 'label': 'Features'},
         ]
 
         rooms_table = ui.table(
@@ -236,8 +251,6 @@ def reserve_page():
 
         step2_card.set_visibility(False)
         step3_card.set_visibility(True)
-
-
 
 
 ui.run(reload=False)
