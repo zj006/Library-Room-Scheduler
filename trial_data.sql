@@ -16,8 +16,8 @@ INSERT INTO room VALUES
 (1, 1, 'Study Room A', 4, false, 120, 'Small study room'),
 (2, 1, 'Study Room B', 8, false, 180, 'Medium group room'),
 (3, 1, 'Quiet Room', 2, false, 90, 'Individual quiet room'),
-(4, 2, 'Group Room 1', 10, true, 180, 'Large group room'),
-(5, 2, 'Conference Room', 15, true, 240, 'Conference-style room');
+(4, 1, 'Group Room 1', 10, true, 180, 'Large group room'),
+(5, 1, 'Conference Room', 15, true, 240, 'Conference-style room');
 
 INSERT INTO feature VALUES
 (1, 'Projector'),
