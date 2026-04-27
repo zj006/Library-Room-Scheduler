@@ -31,6 +31,20 @@ def get_rooms():
     """)
     return cur.fetchall()
 
+
+def get_booked_room_ids():
+    """Returns a set of room_ids that have any approved or pending reservation
+    that has not yet ended (end_datetime is still in the future)."""
+    cur.execute("""
+        SELECT DISTINCT room_id
+        FROM reservation
+        WHERE status IN ('approved', 'pending')
+          AND end_datetime >= NOW()
+    """)
+    rows = cur.fetchall()
+    return {row['room_id'] for row in rows}
+
+
 def get_reservations():
     cur.execute("""
         SELECT reservation.reservation_id,
@@ -113,9 +127,12 @@ def rooms_page():
     ui.label("Click reserve to check availability and book a time")
 
     rooms = get_rooms()
+    booked_ids = get_booked_room_ids()
 
     with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-4"):
         for room in rooms:
+            is_booked = room['room_id'] in booked_ids
+
             with ui.card().classes("w-full p-4"):
                 with ui.row().classes("w-full items-center justify-between"):
                     with ui.column():
@@ -124,14 +141,24 @@ def rooms_page():
                         ui.label(f"Capacity: {room['capacity']}")
                         ui.label(f"Features: {room['features']}")
 
-                    ui.button(
-                        "RESERVE",
-                        on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}"),
-                        color="green"
-                    )
+                        if is_booked:
+                            ui.badge("Currently Unavailable", color="red").classes("mt-1")
+                        else:
+                            ui.badge("Available Now", color="green").classes("mt-1")
+
+                    if is_booked:
+                        ui.button("UNAVAILABLE", color="red").props("disabled")
+                    else:
+                        ui.button(
+                            "RESERVE",
+                            on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}"),
+                            color="green"
+                        )
 
     with ui.row().classes("justify-center mt-6"):
         ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48")
+
+
 @ui.page('/reservations')
 def reservations_page():
     ui.label("Current Reservations").classes("text-h4")
@@ -147,7 +174,8 @@ def reservations_page():
 
     ui.table(columns=columns, rows=get_reservations())
 
-    ui.link("Back Home", "/")
+    # Changed from ui.link to ui.button to match other pages
+    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-4")
 
 
 @ui.page('/reserve')
