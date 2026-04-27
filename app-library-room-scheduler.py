@@ -5,6 +5,8 @@ from psycopg.rows import dict_row
 from dbinfo import *
 from nicegui import ui
 
+from urllib.parse import parse_qs
+
 # Connect to database
 conn = psycopg.connect(
     f"host=dbclass.rhodescs.org dbname=practice user={DBUSER} password={DBPASS}"
@@ -47,19 +49,29 @@ def get_reservations():
 
 def get_available_rooms(start_datetime, end_datetime):
     cur.execute("""
-        SELECT room_id, room_name, capacity
-        FROM room
-        WHERE room_id NOT IN (
-            SELECT room_id
-            FROM reservation
-            WHERE status IN ('approved', 'pending')
-              AND start_datetime < %s
-              AND end_datetime > %s
-        )
-        ORDER BY room_id
-    """, [end_datetime, start_datetime])
-    return cur.fetchall()
+                SELECT r.room_id,
+                       r.room_name,
+                       r.capacity,
+                       b.building_name,
+                       STRING_AGG(f.feature_name, ', ') AS features
+                FROM room r
+                         JOIN building b ON r.building_id = b.building_id
+                         LEFT JOIN room_feature rf ON r.room_id = rf.room_id
+                         LEFT JOIN feature f ON rf.feature_id = f.feature_id
+                WHERE r.room_id NOT IN (SELECT room_id
+                                        FROM reservation
+                                        WHERE status IN ('approved', 'pending')
+                                          AND start_datetime < %s
+                                          AND end_datetime > %s)
+                  AND r.room_id NOT IN (SELECT room_id
+                                        FROM room_block
+                                        WHERE start_datetime < %s
+                                          AND end_datetime > %s)
+                GROUP BY r.room_id, r.room_name, r.capacity, b.building_name
+                ORDER BY r.room_id
+                """, [end_datetime, start_datetime, end_datetime, start_datetime])
 
+    return cur.fetchall()
 
 def make_reservation(user_id, room_id, start_datetime, end_datetime):
     cur.execute("""
@@ -97,21 +109,29 @@ def homepage():
 def rooms_page():
     render_header()
 
-    ui.label("Available Rooms").classes("text-h4 text-center w-full mt-4")
+    ui.label("All Rooms").classes("text-h4 text-center w-full mt-4")
+    ui.label("Click reserve to check availability and book a time")
 
-    columns = [
-        {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
-        {'name': 'building_name', 'field': 'building_name', 'label': 'Building'},
-        {'name': 'capacity', 'field': 'capacity', 'label': 'Capacity'},
-        {'name': 'features', 'field': 'features', 'label': 'Features'},
-    ]
+    rooms = get_rooms()
 
-    ui.table(columns=columns, rows=get_rooms()).classes("w-full max-w-4xl mx-auto mt-4")
+    with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-4"):
+        for room in rooms:
+            with ui.card().classes("w-full p-4"):
+                with ui.row().classes("w-full items-center justify-between"):
+                    with ui.column():
+                        ui.label(room['room_name']).classes("text-lg font-bold")
+                        ui.label(f"Building: {room['building_name']}")
+                        ui.label(f"Capacity: {room['capacity']}")
+                        ui.label(f"Features: {room['features']}")
+
+                    ui.button(
+                        "RESERVE",
+                        on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}"),
+                        color="green"
+                    )
 
     with ui.row().classes("justify-center mt-6"):
-        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 hover:bg-gray-800")
-
-
+        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48")
 @ui.page('/reservations')
 def reservations_page():
     ui.label("Current Reservations").classes("text-h4")
@@ -132,10 +152,13 @@ def reservations_page():
 
 @ui.page('/reserve')
 def reserve_page():
-    selected_room = None
+    room_id = ui.context.client.request.query_params.get('room_id')
+    selected_room = int(room_id) if room_id else None
 
     with ui.card() as step1_card:
         ui.label("Search for Available Rooms").classes("text-h5")
+        if room_id:
+            ui.label(f"Selected Room ID: {room_id}").classes("text-green-600 font-bold")
 
         with ui.row():
             ui.label("User ID:")
@@ -149,7 +172,16 @@ def reserve_page():
             ui.label("End (YYYY-MM-DD HH:MM):")
             end_box = ui.input(placeholder="2026-04-15 11:00")
 
-        ui.button("Find Available Rooms", on_click=lambda: process_step1())
+        with ui.row().classes("gap-4 mt-4"):
+            ui.button(
+                "Go Back",
+                on_click=lambda: ui.navigate.to("/rooms")
+            ).props("color=black")
+
+            ui.button(
+                "Make Reservation",
+                on_click=lambda: process_step1()
+            ).props("color=green")
 
     with ui.card() as step2_card:
         ui.label("Available Rooms").classes("text-h5")
@@ -157,7 +189,9 @@ def reserve_page():
         columns = [
             {'name': 'room_id', 'field': 'room_id', 'label': 'Room ID'},
             {'name': 'room_name', 'field': 'room_name', 'label': 'Room Name'},
+            {'name': 'building_name', 'field': 'building_name', 'label': 'Building'},
             {'name': 'capacity', 'field': 'capacity', 'label': 'Capacity'},
+            {'name': 'features', 'field': 'features', 'label': 'Features'},
         ]
 
         rooms_table = ui.table(
@@ -168,13 +202,20 @@ def reserve_page():
             on_select=lambda e: click_room(e)
         )
 
-        ui.button("Reserve Selected Room", on_click=lambda: process_step2())
+        ui.button(
+            "Reserve Selected Room",
+            on_click=lambda: process_step2()
+        ).props("color=green")
 
     with ui.card() as step3_card:
         ui.label("Reservation Submitted!").classes("text-h5")
         ui.label("Your reservation is now pending.")
-        ui.link("View Reservations", "/reservations")
-        ui.link("Back Home", "/")
+        ui.button("View Reservations", on_click=lambda: ui.navigate.to("/reservations")).classes(
+            "bg-green-600 text-white")
+        ui.button(
+            "Back Home",
+            on_click=lambda: ui.navigate.to("/")
+        ).props("color=black")
 
     step2_card.set_visibility(False)
     step3_card.set_visibility(False)
