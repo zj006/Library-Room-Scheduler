@@ -136,6 +136,43 @@ def make_reservation(user_id, room_id, start_datetime, end_datetime):
     conn.commit()
 
 
+def get_pending_reservations():
+    cur.execute("""
+        SELECT r.reservation_id, u.name AS user_name, rm.room_name,
+               r.start_datetime, r.end_datetime, r.status
+        FROM reservation r
+        JOIN useraccount u  ON r.user_id  = u.user_id
+        JOIN room        rm ON r.room_id  = rm.room_id
+        WHERE r.status = 'pending'
+        ORDER BY r.start_datetime
+    """)
+    return cur.fetchall()
+
+
+def approve_reservation(reservation_id: int, admin_id: int):
+    cur.execute("UPDATE reservation SET status = 'approved' WHERE reservation_id = %s", [reservation_id])
+    cur.execute("""
+        INSERT INTO approval (approval_id, reservation_id, admin_id, decision, decision_time)
+        VALUES (
+            (SELECT COALESCE(MAX(approval_id), 0) + 1 FROM approval),
+            %s, %s, 'approved', NOW()
+        )
+    """, [reservation_id, admin_id])
+    conn.commit()
+
+
+def reject_reservation(reservation_id: int, admin_id: int):
+    cur.execute("UPDATE reservation SET status = 'rejected' WHERE reservation_id = %s", [reservation_id])
+    cur.execute("""
+        INSERT INTO approval (approval_id, reservation_id, admin_id, decision, decision_time)
+        VALUES (
+            (SELECT COALESCE(MAX(approval_id), 0) + 1 FROM approval),
+            %s, %s, 'rejected', NOW()
+        )
+    """, [reservation_id, admin_id])
+    conn.commit()
+
+
 # ── Time slot helpers ──────────────────────────────────────────────────────────
 
 def generate_time_options():
@@ -331,6 +368,8 @@ def homepage():
     ui.button("View Rooms", on_click=lambda: ui.navigate.to("/rooms")).classes("bg-black text-white w-64")
     ui.button("Make a Reservation", on_click=lambda: ui.navigate.to("/reserve")).classes("bg-black text-white w-64")
     ui.button("View Reservations", on_click=lambda: ui.navigate.to("/reservations")).classes("bg-black text-white w-64")
+    if current_role() == 'admin':
+        ui.button("Admin Panel", on_click=lambda: ui.navigate.to("/admin")).classes("bg-red-700 text-white w-64")
 
 
 # ── /rooms ─────────────────────────────────────────────────────────────────────
@@ -544,6 +583,50 @@ def reserve_page():
         make_reservation(session_user_id, selected_room, computed['start'], computed['end'])
         step2_card.set_visibility(False)
         step3_card.set_visibility(True)
+
+
+# ── /admin ─────────────────────────────────────────────────────────────────────
+
+@ui.page('/admin')
+def admin_page():
+    if not require_login():
+        return
+    if current_role() != 'admin':
+        ui.label("Access denied.").classes("text-red-600 text-h5 text-center mt-8")
+        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white mt-4")
+        return
+
+    render_nav_bar()
+    ui.label("Admin Panel — Pending Reservations").classes("text-h4 mt-2 mb-4")
+
+    admin_id = app.storage.user.get('user_id')
+
+    table_container = ui.column().classes("w-full max-w-5xl mx-auto gap-3")
+
+    def refresh():
+        table_container.clear()
+        pending = get_pending_reservations()
+        with table_container:
+            if not pending:
+                ui.label("No pending reservations.").classes("text-gray-500 text-center mt-8")
+                return
+            for res in pending:
+                with ui.card().classes("w-full p-4"):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        with ui.column():
+                            ui.label(f"Reservation #{res['reservation_id']}").classes("font-bold text-lg")
+                            ui.label(f"User: {res['user_name']}")
+                            ui.label(f"Room: {res['room_name']}")
+                            ui.label(f"From: {res['start_datetime'].strftime('%b %d, %Y %I:%M %p')}")
+                            ui.label(f"To:   {res['end_datetime'].strftime('%b %d, %Y %I:%M %p')}")
+                        with ui.row().classes("gap-2"):
+                            rid = res['reservation_id']
+                            ui.button("Approve", on_click=lambda r=rid: (approve_reservation(r, admin_id), refresh())).classes("bg-green-600 text-white")
+                            ui.button("Reject",  on_click=lambda r=rid: (reject_reservation(r, admin_id),  refresh())).classes("bg-red-600 text-white")
+
+    refresh()
+
+    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-6")
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
