@@ -101,6 +101,18 @@ def get_reservations():
     return cur.fetchall()
 
 
+def get_user_reservations(user_id):
+    cur.execute("""
+        SELECT reservation.reservation_id, room.room_name,
+               reservation.start_datetime, reservation.end_datetime, reservation.status
+        FROM reservation
+        JOIN room ON reservation.room_id = room.room_id
+        WHERE reservation.user_id = %s
+        ORDER BY reservation.start_datetime
+    """, [user_id])
+    return cur.fetchall()
+
+
 def get_available_rooms(start_datetime, end_datetime):
     cur.execute("""
         SELECT r.room_id, r.room_name, r.capacity, b.building_name,
@@ -424,18 +436,30 @@ def reservations_page():
         return
 
     render_nav_bar()
-    ui.label("Current Reservations").classes("text-h4")
 
-    columns = [
-        {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
-        {'name': 'name',           'field': 'name',           'label': 'User'},
-        {'name': 'room_name',      'field': 'room_name',      'label': 'Room'},
-        {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
-        {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End'},
-        {'name': 'status',         'field': 'status',         'label': 'Status'},
-    ]
+    if current_role() == 'admin':
+        ui.label("All Reservations").classes("text-h4")
+        columns = [
+            {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
+            {'name': 'name',           'field': 'name',           'label': 'User'},
+            {'name': 'room_name',      'field': 'room_name',      'label': 'Room'},
+            {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
+            {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End'},
+            {'name': 'status',         'field': 'status',         'label': 'Status'},
+        ]
+        rows = get_reservations()
+    else:
+        ui.label("My Reservations").classes("text-h4")
+        columns = [
+            {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
+            {'name': 'room_name',      'field': 'room_name',      'label': 'Room'},
+            {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
+            {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End'},
+            {'name': 'status',         'field': 'status',         'label': 'Status'},
+        ]
+        rows = get_user_reservations(app.storage.user['user_id'])
 
-    ui.table(columns=columns, rows=get_reservations())
+    ui.table(columns=columns, rows=rows)
     ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-4")
 
 
