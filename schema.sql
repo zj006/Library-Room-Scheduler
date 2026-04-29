@@ -86,3 +86,24 @@ CREATE TABLE room_block (
     FOREIGN KEY (room_id) REFERENCES room(room_id),
     CHECK (end_datetime > start_datetime)
 );
+
+-- Indexes for performance
+-- Speeds up availability checks (most frequent query)
+CREATE INDEX IF NOT EXISTS idx_reservation_room_id
+    ON reservation(room_id);
+
+-- Speeds up filtering by status (approved/pending/rejected)
+CREATE INDEX IF NOT EXISTS idx_reservation_status
+    ON reservation(status);
+
+-- Speeds up login lookup by email
+CREATE INDEX IF NOT EXISTS idx_useraccount_email
+    ON useraccount(email);
+
+-- Speeds up admin panel query for pending reservations
+CREATE INDEX IF NOT EXISTS idx_reservation_status_start
+    ON reservation(status, start_datetime);
+
+-- Speeds up room block availability checks
+CREATE INDEX IF NOT EXISTS idx_room_block_room_id
+    ON room_block(room_id);
