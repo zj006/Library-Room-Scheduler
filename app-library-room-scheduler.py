@@ -171,17 +171,21 @@ def make_reservation(user_id, room_id, start_datetime, end_datetime):
 
 
 def get_pending_reservations():
-    cur.execute("""
-        SELECT r.reservation_id, u.name AS user_name, rm.room_name,
-               r.start_datetime, r.end_datetime, r.status
-        FROM reservation r
-        JOIN useraccount u  ON r.user_id  = u.user_id
-        JOIN room        rm ON r.room_id  = rm.room_id
-        WHERE r.status = 'pending'
-        ORDER BY r.start_datetime
-    """)
-    return cur.fetchall()
-
+    with conn.cursor(name='pending_cursor', row_factory=dict_row) as server_cursor:
+        server_cursor.execute("""
+                              SELECT r.reservation_id,
+                                     u.name AS user_name,
+                                     rm.room_name,
+                                     r.start_datetime,
+                                     r.end_datetime,
+                                     r.status
+                              FROM reservation r
+                                       JOIN useraccount u ON r.user_id = u.user_id
+                                       JOIN room rm ON r.room_id = rm.room_id
+                              WHERE r.status = 'pending'
+                              ORDER BY r.start_datetime
+                              """)
+        return [row for row in server_cursor]
 
 def approve_reservation(reservation_id: int, admin_id: int):
     cur.execute("UPDATE reservation SET status = 'approved' WHERE reservation_id = %s", [reservation_id])
@@ -205,6 +209,21 @@ def reject_reservation(reservation_id: int, admin_id: int):
         )
     """, [reservation_id, admin_id])
     conn.commit()
+
+def get_reservation_stats():
+    with conn.cursor(name='stats_cursor', row_factory=dict_row) as server_cursor:
+        server_cursor.execute("""
+            SELECT rm.room_name,
+                   COUNT(r.reservation_id) AS total_reservations,
+                   SUM(CASE WHEN r.status = 'approved' THEN 1 ELSE 0 END) AS approved,
+                   SUM(CASE WHEN r.status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+                   SUM(CASE WHEN r.status = 'rejected' THEN 1 ELSE 0 END) AS rejected
+            FROM room rm
+            LEFT JOIN reservation r ON rm.room_id = r.room_id
+            GROUP BY rm.room_name
+            ORDER BY total_reservations DESC
+        """)
+        return [row for row in server_cursor]
 
 
 # ── Time slot helpers ──────────────────────────────────────────────────────────
@@ -463,27 +482,38 @@ def reservations_page():
         ui.label("All Reservations").classes("text-h4")
         columns = [
             {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
-            {'name': 'name',           'field': 'name',           'label': 'User'},
-            {'name': 'room_name',      'field': 'room_name',      'label': 'Room'},
+            {'name': 'name', 'field': 'name', 'label': 'User'},
+            {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
             {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
-            {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End'},
-            {'name': 'status',         'field': 'status',         'label': 'Status'},
+            {'name': 'end_datetime', 'field': 'end_datetime', 'label': 'End'},
+            {'name': 'status', 'field': 'status', 'label': 'Status'},
         ]
         rows = get_reservations()
     else:
         ui.label("My Reservations").classes("text-h4")
         columns = [
             {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
-            {'name': 'room_name',      'field': 'room_name',      'label': 'Room'},
+            {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
             {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
-            {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End'},
-            {'name': 'status',         'field': 'status',         'label': 'Status'},
+            {'name': 'end_datetime', 'field': 'end_datetime', 'label': 'End'},
+            {'name': 'status', 'field': 'status', 'label': 'Status'},
         ]
         rows = get_user_reservations(app.storage.user['user_id'])
 
     ui.table(columns=columns, rows=rows)
-    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-4")
 
+    # Stats table — outside both blocks, visible to everyone
+    ui.label("Room Usage Summary").classes("text-h5 mt-6")
+    stats_columns = [
+        {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
+        {'name': 'total_reservations', 'field': 'total_reservations', 'label': 'Total'},
+        {'name': 'approved', 'field': 'approved', 'label': 'Approved'},
+        {'name': 'pending', 'field': 'pending', 'label': 'Pending'},
+        {'name': 'rejected', 'field': 'rejected', 'label': 'Rejected'},
+    ]
+    ui.table(columns=stats_columns, rows=get_reservation_stats())
+
+    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-4")
 
 # ── /reserve ───────────────────────────────────────────────────────────────────
 
