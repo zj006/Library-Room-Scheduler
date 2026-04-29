@@ -137,15 +137,37 @@ def get_available_rooms(start_datetime, end_datetime):
 
 
 def make_reservation(user_id, room_id, start_datetime, end_datetime):
-    cur.execute("""
-        INSERT INTO reservation
-        (reservation_id, user_id, room_id, start_datetime, end_datetime, purpose, attendee_count, status)
-        VALUES (
-            (SELECT COALESCE(MAX(reservation_id), 0) + 1 FROM reservation),
-            %s, %s, %s, %s, 'General Use', 1, 'pending'
-        )
-    """, [user_id, room_id, start_datetime, end_datetime])
-    conn.commit()
+    cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    try:
+        # Re-check availability inside the transaction
+        cur.execute("""
+                    SELECT COUNT(*) as cnt
+                    FROM reservation
+                    WHERE room_id = %s
+                      AND status IN ('approved', 'pending')
+                      AND start_datetime < %s
+                      AND end_datetime > %s
+                    """, [room_id, end_datetime, start_datetime])
+
+        result = cur.fetchone()
+        if result['cnt'] > 0:
+            cur.execute("ROLLBACK")
+            return False  # room was taken since last check
+
+        cur.execute("""
+                    INSERT INTO reservation
+                    (reservation_id, user_id, room_id, start_datetime, end_datetime,
+                     purpose, attendee_count, status)
+                    VALUES ((SELECT COALESCE(MAX(reservation_id), 0) + 1 FROM reservation),
+                            %s, %s, %s, %s, 'General Use', 1, 'pending')
+                    """, [user_id, room_id, start_datetime, end_datetime])
+
+        cur.execute("COMMIT")
+        return True
+
+    except Exception as e:
+        cur.execute("ROLLBACK")
+        raise e
 
 
 def get_pending_reservations():
@@ -604,10 +626,13 @@ def reserve_page():
             ui.notify("Something went wrong. Please go back and try again.")
             return
 
-        make_reservation(session_user_id, selected_room, computed['start'], computed['end'])
-        step2_card.set_visibility(False)
-        step3_card.set_visibility(True)
+        success = make_reservation(session_user_id, selected_room, computed['start'], computed['end'])
 
+        if success:
+            step2_card.set_visibility(False)
+            step3_card.set_visibility(True)
+        else:
+            ui.notify("Sorry, that room was just booked by someone else. Please select another.", type="warning")
 
 # ── /admin ─────────────────────────────────────────────────────────────────────
 
