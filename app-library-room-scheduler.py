@@ -311,9 +311,29 @@ def render_nav_bar():
             ui.icon('local_library', size='2rem').style('color: #9b1c1c')
             ui.label('Library Scheduler').classes('text-white font-semibold text-base')
         with ui.row().classes('items-center gap-4'):
-            with ui.element('div').classes('rounded-full px-4 py-1').style('background:#1f2937'):
-                ui.label(f'{name}  ·  {role}').classes('text-gray-300 text-sm')
-            ui.button('Log Out', on_click=do_logout).props('color=primary flat no-caps').classes('text-sm font-semibold')
+            with ui.button('').props('flat no-caps').classes('rounded-full p-0').style('background:transparent'):
+                with ui.row().classes('items-center gap-2 px-3 py-2 rounded-full').style('background:#1f2937; border: 1px solid #374151; transition: background .2s'):
+                    with ui.element('div').classes('w-8 h-8 rounded-full flex items-center justify-center').style('background:#9b1c1c'):
+                        ui.label(name[0].upper() if name else '?').classes('text-white font-bold text-sm')
+                    with ui.column().classes('gap-0 items-start'):
+                        ui.label(name).classes('text-white text-xs font-semibold leading-tight')
+                        ui.label(role.capitalize()).classes('text-xs leading-tight').style('color:#9b1c1c')
+                    ui.icon('expand_more', size='1rem').classes('text-gray-400')
+                with ui.menu().props('auto-close').classes('rounded-xl shadow-xl').style('min-width:180px; margin-top:4px'):
+                    with ui.element('div').classes('px-4 py-3').style('border-bottom: 1px solid #f3f4f6'):
+                        ui.label(name).classes('text-sm font-semibold text-gray-900')
+                        ui.label(role.capitalize()).classes('text-xs text-gray-400')
+                    with ui.item(on_click=lambda: ui.navigate.to('/account')).classes('cursor-pointer'):
+                        with ui.item_section().props('avatar'):
+                            ui.icon('manage_accounts', size='1.1rem').classes('text-gray-500')
+                        with ui.item_section():
+                            ui.label('Account Settings').classes('text-sm text-gray-700')
+                    ui.separator()
+                    with ui.item(on_click=do_logout).classes('cursor-pointer'):
+                        with ui.item_section().props('avatar'):
+                            ui.icon('logout', size='1.1rem').style('color:#ef4444')
+                        with ui.item_section():
+                            ui.label('Log Out').classes('text-sm text-red-500')
 
 
 def do_logout():
@@ -384,7 +404,9 @@ def register_page():
         ui.label('Create Account').classes('text-xl font-bold text-gray-900 mb-1 text-center w-full')
         ui.label('Fill in your details to get started.').classes('text-xs text-gray-500 mb-5 text-center w-full')
 
-        name_box  = ui.input('Full Name').props('outlined dense').classes('w-full mb-3')
+        with ui.row().classes('w-full gap-3 mb-3'):
+            first_name_box = ui.input('First Name').props('outlined dense').classes('flex-1')
+            last_name_box  = ui.input('Last Name').props('outlined dense').classes('flex-1')
         email_box = ui.input('Email', placeholder='you@university.edu').props('outlined dense').classes('w-full mb-3')
         pass_box  = ui.input('Password', password=True, password_toggle_button=True).props('outlined dense').classes('w-full mb-3')
         pass_box2 = ui.input('Confirm Password', password=True, password_toggle_button=True).props('outlined dense').classes('w-full')
@@ -398,14 +420,16 @@ def register_page():
         error_label = ui.label('').classes('text-red-500 text-xs mt-2 min-h-[1rem]')
 
         def do_register():
-            name     = name_box.value.strip()
+            first    = first_name_box.value.strip()
+            last     = last_name_box.value.strip()
+            name     = f'{first} {last}'
             email    = email_box.value.strip().lower()
             password = pass_box.value
             confirm  = pass_box2.value
             role_id  = int(role_select.value)
 
-            if not name:
-                error_label.set_text('Please enter your name.')
+            if not first or not last:
+                error_label.set_text('Please enter your first and last name.')
                 return
             if not email.endswith('.edu'):
                 error_label.set_text('Email must end with .edu')
@@ -768,6 +792,140 @@ def reserve_page():
             step3_card.set_visibility(True)
         else:
             ui.notify('Sorry, that room was just booked by someone else. Please select another.', type='warning')
+
+
+# ── /account ───────────────────────────────────────────────────────────────────
+
+@ui.page('/account')
+def account_page():
+    if not require_login():
+        return
+
+    render_nav_bar()
+
+    user_id = app.storage.user.get('user_id')
+    current_name  = app.storage.user.get('name', '')
+    current_email = app.storage.user.get('email', '')
+    current_role  = app.storage.user.get('role_name', '')
+
+    name_parts = current_name.split(' ', 1)
+    current_first = name_parts[0]
+    current_last  = name_parts[1] if len(name_parts) > 1 else ''
+
+    with ui.column().classes('w-full max-w-lg mx-auto px-4 gap-4'):
+
+        # Page heading
+        with ui.column().classes('gap-0'):
+            ui.label('Account Settings').classes('text-xl font-bold text-gray-900')
+            ui.label('Manage your profile and security settings.').classes('text-sm text-gray-500')
+
+        # Profile summary card
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-5'):
+            with ui.row().classes('items-center gap-4'):
+                with ui.element('div').classes('w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0').style('background:#9b1c1c'):
+                    ui.label(current_name[0].upper() if current_name else '?').classes('text-white font-bold text-xl')
+                with ui.column().classes('gap-0'):
+                    ui.label(current_name).classes('text-gray-900 font-semibold text-base')
+                    ui.label(current_email).classes('text-gray-500 text-xs mt-0.5')
+                    with ui.element('div').classes('rounded-full px-2 py-0.5 mt-1').style('background:#fef2f2; display:inline-block'):
+                        ui.label(current_role.capitalize()).classes('text-xs font-semibold').style('color:#9b1c1c')
+
+        # Update name card
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-6'):
+            with ui.row().classes('items-center gap-2 mb-4'):
+                ui.icon('badge', size='1.2rem').classes('text-gray-400')
+                ui.label('Update Name').classes('text-sm font-semibold text-gray-700')
+
+            with ui.row().classes('w-full gap-3'):
+                first_name_box = ui.input('First Name', value=current_first).props('outlined dense').classes('flex-1')
+                last_name_box  = ui.input('Last Name',  value=current_last).props('outlined dense').classes('flex-1')
+            name_error = ui.label('').classes('text-red-500 text-xs mt-1 min-h-[1rem]')
+
+        # Change email card
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-6'):
+            with ui.row().classes('items-center gap-2 mb-4'):
+                ui.icon('email', size='1.2rem').classes('text-gray-400')
+                ui.label('Change Email').classes('text-sm font-semibold text-gray-700')
+
+            email_box  = ui.input('New Email', placeholder='you@university.edu', value=current_email).props('outlined dense').classes('w-full')
+            email_error = ui.label('').classes('text-red-500 text-xs mt-1 min-h-[1rem]')
+
+        # Change password card
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-6'):
+            with ui.row().classes('items-center gap-2 mb-4'):
+                ui.icon('lock', size='1.2rem').classes('text-gray-400')
+                ui.label('Change Password').classes('text-sm font-semibold text-gray-700')
+
+            new_pass_box     = ui.input('New Password', password=True, password_toggle_button=True).props('outlined dense autocomplete=new-password').classes('w-full mb-3')
+            confirm_pass_box = ui.input('Confirm New Password', password=True, password_toggle_button=True).props('outlined dense autocomplete=new-password').classes('w-full')
+            pass_error = ui.label('').classes('text-red-500 text-xs mt-1 min-h-[1rem]')
+
+        # Confirmation dialog
+        with ui.dialog() as confirm_dialog, ui.card().classes('rounded-2xl p-6 w-80'):
+            ui.label('Save Changes?').classes('text-base font-bold text-gray-900 mb-1')
+            ui.label('Are you sure you want to update your account settings?').classes('text-sm text-gray-500 mb-4')
+            with ui.row().classes('justify-end gap-3 w-full'):
+                ui.button('Cancel', on_click=confirm_dialog.close).props('flat no-caps').classes('text-gray-500')
+                ui.button('Confirm', on_click=lambda: (do_save(), confirm_dialog.close())).props('color=primary no-caps unelevated').classes('rounded-lg font-semibold')
+
+        def validate():
+            name_error.set_text('')
+            email_error.set_text('')
+            pass_error.set_text('')
+
+            first = first_name_box.value.strip()
+            last  = last_name_box.value.strip()
+            if not first or not last:
+                name_error.set_text('Please enter both first and last name.')
+                return False
+
+            new_email = email_box.value.strip().lower()
+            if not new_email.endswith('.edu'):
+                email_error.set_text('Email must end with .edu')
+                return False
+            if new_email != current_email and get_user_by_email(new_email):
+                email_error.set_text('An account with that email already exists.')
+                return False
+
+            new_pass = new_pass_box.value
+            confirm  = confirm_pass_box.value
+            if new_pass or confirm:
+                if len(new_pass) < 6:
+                    pass_error.set_text('Password must be at least 6 characters.')
+                    return False
+                if new_pass != confirm:
+                    pass_error.set_text('Passwords do not match.')
+                    return False
+
+            return True
+
+        def do_save():
+            first     = first_name_box.value.strip()
+            last      = last_name_box.value.strip()
+            new_name  = f'{first} {last}'
+            new_email = email_box.value.strip().lower()
+            new_pass  = new_pass_box.value
+
+            cur.execute("UPDATE useraccount SET name = %s, email = %s WHERE user_id = %s", [new_name, new_email, user_id])
+            if new_pass:
+                cur.execute("UPDATE useraccount SET password_hash = %s WHERE user_id = %s", [hash_password(new_pass), user_id])
+            conn.commit()
+
+            app.storage.user['name']  = new_name
+            app.storage.user['email'] = new_email
+            new_pass_box.value = ''
+            confirm_pass_box.value = ''
+            ui.notify('Settings saved successfully.', type='positive')
+            ui.timer(2.0, lambda: ui.navigate.to('/'), once=True)
+
+        def on_save_click():
+            if validate():
+                confirm_dialog.open()
+
+        # Bottom action row
+        with ui.row().classes('w-full justify-between items-center mt-1'):
+            ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg')
+            ui.button('Save Changes', on_click=on_save_click).props('color=primary no-caps unelevated').classes('rounded-lg font-semibold')
 
 
 # ── /admin ─────────────────────────────────────────────────────────────────────
