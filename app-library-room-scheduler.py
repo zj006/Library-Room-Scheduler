@@ -139,7 +139,6 @@ def get_available_rooms(start_datetime, end_datetime):
 def make_reservation(user_id, room_id, start_datetime, end_datetime):
     cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     try:
-        # Re-check availability inside the transaction
         cur.execute("""
                     SELECT COUNT(*) as cnt
                     FROM reservation
@@ -152,7 +151,7 @@ def make_reservation(user_id, room_id, start_datetime, end_datetime):
         result = cur.fetchone()
         if result['cnt'] > 0:
             cur.execute("ROLLBACK")
-            return False  # room was taken since last check
+            return False
 
         cur.execute("""
                     INSERT INTO reservation
@@ -229,17 +228,15 @@ def get_reservation_stats():
 # ── Time slot helpers ──────────────────────────────────────────────────────────
 
 def generate_time_options():
-    """Generate every 30-minute slot across a full day."""
     options = []
     base = datetime(2000, 1, 1, 0, 0)
-    for i in range(48):  # 48 half-hour slots
+    for i in range(48):
         t = base + timedelta(minutes=30 * i)
         options.append(t.strftime("%I:%M %p"))
     return options
 
 
 def generate_duration_options():
-    """30-min increments up to 4 hours."""
     options = []
     for minutes in range(30, 241, 30):
         hours = minutes // 60
@@ -255,12 +252,10 @@ def generate_duration_options():
 
 
 def parse_datetime(date_str: str, time_str: str) -> datetime:
-    """Combine a date string (YYYY-MM-DD) and time string (HH:MM AM/PM)."""
     return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %I:%M %p")
 
 
 def duration_label_to_minutes(label: str) -> int:
-    """Convert a duration label like '2 hrs 30 min' back to total minutes."""
     total = 0
     if 'hr' in label:
         parts = label.split('hr')
@@ -272,21 +267,53 @@ def duration_label_to_minutes(label: str) -> int:
     return total
 
 
+# ── Global styles ──────────────────────────────────────────────────────────────
+
+GLOBAL_STYLES = '''
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --q-primary: #9b1c1c; }
+  body, .q-page { font-family: "Inter", sans-serif !important; background: #f3f4f6; }
+  .card-hover { transition: box-shadow .2s ease, transform .15s ease; }
+  .card-hover:hover { box-shadow: 0 10px 30px rgba(0,0,0,0.12); transform: translateY(-2px); }
+  .q-date__header { background: #9b1c1c !important; }
+  .q-date__header-link { color: #fff !important; }
+  .q-date__calendar-item--active .q-btn { background: #9b1c1c !important; color: #fff !important; }
+  .q-date__calendar-item .q-btn.text-primary { color: #9b1c1c !important; }
+  .q-date__calendar-today .q-btn:before { border-color: #9b1c1c !important; }
+  .q-date .q-btn.text-primary { color: #9b1c1c !important; }
+</style>
+'''
+
+ui.add_head_html(GLOBAL_STYLES, shared=True)
+
+
+def add_styles():
+    ui.add_head_html(GLOBAL_STYLES)
+
+
 # ── Shared UI ──────────────────────────────────────────────────────────────────
 
 def render_header():
-    with ui.card().classes("w-full max-w-xl mx-auto p-6 shadow-lg border border-red-200 bg-gray-50"):
-        with ui.column().classes("items-center"):
-            ui.label("Library Room Scheduler").classes("text-h3 text-red-700 font-bold")
-            ui.label("Reserve study spaces easily").classes("text-sm text-gray-600")
+    with ui.column().classes('items-center w-full mt-12 mb-6 gap-1'):
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('local_library', size='2rem').style('color: #9b1c1c')
+            ui.label('Library Scheduler').classes('text-2xl font-bold text-gray-900 tracking-tight')
+        ui.label('Reserve study spaces easily').classes('text-sm text-gray-500')
 
 
 def render_nav_bar():
-    with ui.row().classes("w-full justify-between items-center px-4 py-2 bg-gray-100 border-b mb-4"):
-        name = app.storage.user.get('name', '')
-        role = app.storage.user.get('role_name', '')
-        ui.label(f"👤 {name}  ({role})").classes("text-sm text-gray-700")
-        ui.button("Log Out", on_click=do_logout).classes("bg-red-600 text-white text-xs")
+    add_styles()
+    name = app.storage.user.get('name', '')
+    role = app.storage.user.get('role_name', '')
+    with ui.row().classes('w-full justify-between items-center px-8 py-4 bg-gray-900 mb-6').style('border-bottom: 3px solid #9b1c1c'):
+        with ui.row().classes('items-center gap-3'):
+            ui.icon('local_library', size='2rem').style('color: #9b1c1c')
+            ui.label('Library Scheduler').classes('text-white font-semibold text-base')
+        with ui.row().classes('items-center gap-4'):
+            with ui.element('div').classes('rounded-full px-4 py-1').style('background:#1f2937'):
+                ui.label(f'{name}  ·  {role}').classes('text-gray-300 text-sm')
+            ui.button('Log Out', on_click=do_logout).props('color=primary flat no-caps').classes('text-sm font-semibold')
 
 
 def do_logout():
@@ -298,34 +325,36 @@ def do_logout():
 
 @ui.page('/login')
 def login_page():
+    add_styles()
     if is_logged_in():
         ui.navigate.to('/')
         return
 
     render_header()
 
-    with ui.card().classes("w-full max-w-sm mx-auto mt-8 p-6 shadow"):
-        ui.label("Sign In").classes("text-h5 font-bold mb-2")
+    with ui.card().classes('w-full max-w-sm mx-auto rounded-2xl shadow-lg p-8'):
+        ui.label('Sign In').classes('text-xl font-bold text-gray-900 mb-1 text-center w-full')
+        ui.label('Welcome back — enter your credentials below.').classes('text-xs text-gray-500 mb-5 text-center w-full')
 
-        email_box = ui.input("Email (.edu required)", placeholder="you@university.edu").classes("w-full")
-        pass_box  = ui.input("Password", password=True, password_toggle_button=True).classes("w-full")
-        error_label = ui.label("").classes("text-red-600 text-sm")
+        email_box = ui.input('Email', placeholder='you@university.edu').props('outlined dense').classes('w-full mb-3')
+        pass_box  = ui.input('Password', password=True, password_toggle_button=True).props('outlined dense').classes('w-full')
+        error_label = ui.label('').classes('text-red-500 text-xs mt-2 min-h-[1rem]')
 
         def do_login():
-            email = email_box.value.strip().lower()
+            email    = email_box.value.strip().lower()
             password = pass_box.value
 
             if not email.endswith('.edu'):
-                error_label.set_text("Email must end with .edu")
+                error_label.set_text('Email must end with .edu')
                 return
 
             user = get_user_by_email(email)
             if not user:
-                error_label.set_text("No account found with that email.")
+                error_label.set_text('No account found with that email.')
                 return
 
             if user['password_hash'] != hash_password(password):
-                error_label.set_text("Incorrect password.")
+                error_label.set_text('Incorrect password.')
                 return
 
             role_name = get_role_name(user['role_id'])
@@ -338,35 +367,35 @@ def login_page():
             })
             ui.navigate.to('/')
 
-        ui.button("Sign In", on_click=do_login).classes("bg-black text-white w-full mt-2")
-        ui.separator()
-        ui.label("Don't have an account?").classes("text-sm text-gray-500 text-center")
-        ui.button("Create Account", on_click=lambda: ui.navigate.to('/register')).classes(
-            "bg-gray-200 text-black w-full"
-        )
+        ui.button('Sign In', on_click=do_login).props('color=primary no-caps unelevated').classes('w-full mt-4 rounded-lg font-semibold')
+        ui.separator().classes('my-4')
+        ui.label("Don't have an account?").classes('text-xs text-gray-500 text-center mb-2')
+        ui.button('Create Account', on_click=lambda: ui.navigate.to('/register')).props('color=primary outline no-caps').classes('w-full rounded-lg font-medium')
 
 
 # ── /register ──────────────────────────────────────────────────────────────────
 
 @ui.page('/register')
 def register_page():
+    add_styles()
     render_header()
 
-    with ui.card().classes("w-full max-w-sm mx-auto mt-8 p-6 shadow"):
-        ui.label("Create Account").classes("text-h5 font-bold mb-2")
+    with ui.card().classes('w-full max-w-sm mx-auto rounded-2xl shadow-lg p-8'):
+        ui.label('Create Account').classes('text-xl font-bold text-gray-900 mb-1 text-center w-full')
+        ui.label('Fill in your details to get started.').classes('text-xs text-gray-500 mb-5 text-center w-full')
 
-        name_box  = ui.input("Full Name").classes("w-full")
-        email_box = ui.input("Email (.edu required)", placeholder="you@university.edu").classes("w-full")
-        pass_box  = ui.input("Password", password=True, password_toggle_button=True).classes("w-full")
-        pass_box2 = ui.input("Confirm Password", password=True, password_toggle_button=True).classes("w-full")
+        name_box  = ui.input('Full Name').props('outlined dense').classes('w-full mb-3')
+        email_box = ui.input('Email', placeholder='you@university.edu').props('outlined dense').classes('w-full mb-3')
+        pass_box  = ui.input('Password', password=True, password_toggle_button=True).props('outlined dense').classes('w-full mb-3')
+        pass_box2 = ui.input('Confirm Password', password=True, password_toggle_button=True).props('outlined dense').classes('w-full')
 
         role_select = ui.select(
-            label="Role",
-            options={"1": "Student", "2": "Admin"},
-            value="1"
-        ).classes("w-full")
+            label='Role',
+            options={'1': 'Student', '2': 'Admin'},
+            value='1'
+        ).props('outlined dense').classes('w-full mt-3')
 
-        error_label = ui.label("").classes("text-red-600 text-sm")
+        error_label = ui.label('').classes('text-red-500 text-xs mt-2 min-h-[1rem]')
 
         def do_register():
             name     = name_box.value.strip()
@@ -376,30 +405,28 @@ def register_page():
             role_id  = int(role_select.value)
 
             if not name:
-                error_label.set_text("Please enter your name.")
+                error_label.set_text('Please enter your name.')
                 return
             if not email.endswith('.edu'):
-                error_label.set_text("Email must end with .edu")
+                error_label.set_text('Email must end with .edu')
                 return
             if len(password) < 6:
-                error_label.set_text("Password must be at least 6 characters.")
+                error_label.set_text('Password must be at least 6 characters.')
                 return
             if password != confirm:
-                error_label.set_text("Passwords do not match.")
+                error_label.set_text('Passwords do not match.')
                 return
             if get_user_by_email(email):
-                error_label.set_text("An account with that email already exists.")
+                error_label.set_text('An account with that email already exists.')
                 return
 
             create_user(name, email, password, role_id)
-            ui.notify("Account created! Please sign in.", type="positive")
+            ui.notify('Account created! Please sign in.', type='positive')
             ui.navigate.to('/login')
 
-        ui.button("Create Account", on_click=do_register).classes("bg-black text-white w-full mt-2")
-        ui.separator()
-        ui.button("Back to Login", on_click=lambda: ui.navigate.to('/login')).classes(
-            "bg-gray-200 text-black w-full"
-        )
+        ui.button('Create Account', on_click=do_register).props('color=primary no-caps unelevated').classes('w-full mt-4 rounded-lg font-semibold')
+        ui.separator().classes('my-4')
+        ui.button('Back to Sign In', on_click=lambda: ui.navigate.to('/login')).props('color=primary outline no-caps').classes('w-full rounded-lg font-medium')
 
 
 # ── / (homepage) ───────────────────────────────────────────────────────────────
@@ -411,18 +438,37 @@ def homepage():
 
     render_nav_bar()
 
-    with ui.card().classes("w-full max-w-xl mx-auto p-6 shadow-lg"):
-        with ui.column().classes("items-center"):
-            ui.label("Library Room Scheduler").classes("text-h3 text-red-700 font-bold")
-            ui.label(f"Welcome, {app.storage.user.get('name', '')}!").classes("text-sm text-gray-600")
+    available_count = len(get_rooms()) - len(get_booked_room_ids())
+    name = app.storage.user.get('name', '')
+    role = app.storage.user.get('role_name', '')
 
-    ui.label("Search available library rooms and make your reservations!")
+    with ui.column().classes('w-full max-w-3xl mx-auto px-4 gap-5'):
+        # Hero banner
+        with ui.element('div').classes('w-full rounded-2xl p-8').style('background: linear-gradient(135deg, #9b1c1c 0%, #7f1d1d 100%)'):
+            ui.label(f'Welcome back, {name}').classes('text-white text-2xl font-bold')
+            ui.label(f'{available_count} room{"s" if available_count != 1 else ""} available right now').classes('text-white text-sm mt-1').style('opacity:0.8')
 
-    ui.button("View Rooms", on_click=lambda: ui.navigate.to("/rooms")).classes("bg-black text-white w-64")
-    ui.button("Make a Reservation", on_click=lambda: ui.navigate.to("/reserve")).classes("bg-black text-white w-64")
-    ui.button("View Reservations", on_click=lambda: ui.navigate.to("/reservations")).classes("bg-black text-white w-64")
-    if current_role() == 'admin':
-        ui.button("Admin Panel", on_click=lambda: ui.navigate.to("/admin")).classes("bg-red-700 text-white w-64")
+        # Nav cards
+        nav_items = [
+            ('meeting_room', 'Browse Rooms',      'View all available study spaces', '/rooms'),
+            ('event',        'Make a Reservation','Book a room for your session',     '/reserve'),
+            ('list_alt',     'My Reservations',   'View and track your bookings',     '/reservations'),
+        ]
+
+        with ui.grid(columns=3).classes('w-full gap-4'):
+            for icon_name, title, subtitle, route in nav_items:
+                with ui.card().classes('card-hover rounded-2xl p-6 bg-white shadow-sm border border-gray-100 cursor-pointer').on('click', lambda r=route: ui.navigate.to(r)):
+                    ui.icon(icon_name, size='2rem').style('color: #9b1c1c')
+                    ui.label(title).classes('text-gray-900 font-semibold text-sm mt-3')
+                    ui.label(subtitle).classes('text-gray-500 text-xs mt-1')
+
+        if role == 'admin':
+            with ui.card().classes('card-hover w-full rounded-2xl p-5 bg-white shadow-sm border border-gray-100 cursor-pointer').style('border-left: 4px solid #9b1c1c').on('click', lambda: ui.navigate.to('/admin')):
+                with ui.row().classes('items-center gap-4'):
+                    ui.icon('admin_panel_settings', size='2rem').style('color: #9b1c1c')
+                    with ui.column().classes('gap-0'):
+                        ui.label('Admin Panel').classes('text-gray-900 font-semibold text-sm')
+                        ui.label('Review and manage pending reservations').classes('text-gray-500 text-xs')
 
 
 # ── /rooms ─────────────────────────────────────────────────────────────────────
@@ -433,40 +479,58 @@ def rooms_page():
         return
 
     render_nav_bar()
-    render_header()
 
-    ui.label("All Rooms").classes("text-h4 text-center w-full mt-4")
-    ui.label("Click reserve to check availability and book a time")
+    with ui.column().classes('w-full max-w-4xl mx-auto px-4 gap-4'):
+        with ui.row().classes('items-center justify-between w-full'):
+            with ui.column().classes('gap-0'):
+                ui.label('All Rooms').classes('text-xl font-bold text-gray-900')
+                ui.label('Click Reserve to check availability and book a time.').classes('text-sm text-gray-500')
 
-    rooms = get_rooms()
-    booked_ids = get_booked_room_ids()
+        rooms = get_rooms()
+        booked_ids = get_booked_room_ids()
 
-    with ui.column().classes("w-full max-w-4xl mx-auto gap-4 mt-4"):
-        for room in rooms:
-            is_booked = room['room_id'] in booked_ids
-            with ui.card().classes("w-full p-4"):
-                with ui.row().classes("w-full items-center justify-between"):
-                    with ui.column():
-                        ui.label(room['room_name']).classes("text-lg font-bold")
-                        ui.label(f"Building: {room['building_name']}")
-                        ui.label(f"Capacity: {room['capacity']}")
-                        ui.label(f"Features: {room['features']}")
-                        if is_booked:
-                            ui.badge("Currently Unavailable", color="red").classes("mt-1")
-                        else:
-                            ui.badge("Available Now", color="green").classes("mt-1")
+        search_input = ui.input(placeholder='Search by room name or building...').props('outlined dense clearable').classes('w-full')
 
-                    if is_booked:
-                        ui.button("UNAVAILABLE", color="red").props("disabled")
-                    else:
-                        ui.button(
-                            "RESERVE",
-                            on_click=lambda room_id=room['room_id']: ui.navigate.to(f"/reserve?room_id={room_id}"),
-                            color="green"
-                        )
+        room_container = ui.column().classes('w-full gap-3 mt-1')
 
-    with ui.row().classes("justify-center mt-6"):
-        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48")
+        def render_rooms(filter_text=''):
+            room_container.clear()
+            q = filter_text.strip().lower()
+            filtered = [r for r in rooms if not q or q in r['room_name'].lower() or q in (r['building_name'] or '').lower()]
+            with room_container:
+                if not filtered:
+                    with ui.column().classes('items-center mt-10 gap-2'):
+                        ui.icon('search_off', size='3rem').classes('text-gray-300')
+                        ui.label('No rooms match your search.').classes('text-gray-400')
+                    return
+                for room in filtered:
+                    is_booked = room['room_id'] in booked_ids
+                    accent = 'border-red-400' if is_booked else 'border-green-500'
+                    with ui.card().classes(f'w-full rounded-xl bg-white shadow-sm border-l-4 {accent}'):
+                        with ui.row().classes('w-full items-center justify-between p-4'):
+                            with ui.column().classes('gap-1'):
+                                ui.label(room['room_name']).classes('text-gray-900 font-semibold text-base')
+                                with ui.row().classes('gap-4 flex-wrap'):
+                                    ui.label(f"Building: {room['building_name']}").classes('text-gray-500 text-xs')
+                                    ui.label(f"Capacity: {room['capacity']}").classes('text-gray-500 text-xs')
+                                if room['features']:
+                                    ui.label(f"Features: {room['features']}").classes('text-gray-500 text-xs')
+                                if is_booked:
+                                    ui.badge('Unavailable', color='red').classes('mt-1 text-xs')
+                                else:
+                                    ui.badge('Available', color='green').classes('mt-1 text-xs')
+                            if is_booked:
+                                ui.button('Unavailable').props('color=grey disabled no-caps unelevated').classes('rounded-lg px-4 text-xs font-medium')
+                            else:
+                                ui.button(
+                                    'Reserve',
+                                    on_click=lambda rid=room['room_id']: ui.navigate.to(f'/reserve?room_id={rid}')
+                                ).props('color=primary no-caps unelevated').classes('rounded-lg px-4 text-xs font-medium')
+
+        search_input.on('input', lambda: render_rooms(search_input.value))
+        render_rooms()
+
+        ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg mt-2')
 
 
 # ── /reservations ──────────────────────────────────────────────────────────────
@@ -478,42 +542,55 @@ def reservations_page():
 
     render_nav_bar()
 
-    if current_role() == 'admin':
-        ui.label("All Reservations").classes("text-h4")
-        columns = [
-            {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
-            {'name': 'name', 'field': 'name', 'label': 'User'},
-            {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
-            {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
-            {'name': 'end_datetime', 'field': 'end_datetime', 'label': 'End'},
-            {'name': 'status', 'field': 'status', 'label': 'Status'},
+    with ui.column().classes('w-full max-w-5xl mx-auto px-4 gap-5'):
+        if current_role() == 'admin':
+            ui.label('All Reservations').classes('text-xl font-bold text-gray-900')
+            columns = [
+                {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'ID', 'align': 'left'},
+                {'name': 'name',           'field': 'name',           'label': 'User', 'align': 'left'},
+                {'name': 'room_name',      'field': 'room_name',      'label': 'Room', 'align': 'left'},
+                {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start', 'align': 'left'},
+                {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End', 'align': 'left'},
+                {'name': 'status',         'field': 'status',         'label': 'Status', 'align': 'left'},
+            ]
+            rows = get_reservations()
+        else:
+            ui.label('My Reservations').classes('text-xl font-bold text-gray-900')
+            columns = [
+                {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'ID', 'align': 'left'},
+                {'name': 'room_name',      'field': 'room_name',      'label': 'Room', 'align': 'left'},
+                {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start', 'align': 'left'},
+                {'name': 'end_datetime',   'field': 'end_datetime',   'label': 'End', 'align': 'left'},
+                {'name': 'status',         'field': 'status',         'label': 'Status', 'align': 'left'},
+            ]
+            rows = get_user_reservations(app.storage.user['user_id'])
+
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-2'):
+            table = ui.table(columns=columns, rows=rows).classes('w-full')
+            table.add_slot('body-cell-status', '''
+                <q-td :props="props">
+                    <q-badge
+                        :color="props.value === 'approved' ? 'green' : props.value === 'rejected' ? 'red' : 'orange'"
+                        :label="props.value"
+                    />
+                </q-td>
+            ''')
+
+        ui.separator().classes('my-2')
+        ui.label('Room Usage Summary').classes('text-base font-bold text-gray-900')
+
+        stats_columns = [
+            {'name': 'room_name',          'field': 'room_name',          'label': 'Room',     'align': 'left'},
+            {'name': 'total_reservations', 'field': 'total_reservations', 'label': 'Total',    'align': 'center'},
+            {'name': 'approved',           'field': 'approved',           'label': 'Approved', 'align': 'center'},
+            {'name': 'pending',            'field': 'pending',            'label': 'Pending',  'align': 'center'},
+            {'name': 'rejected',           'field': 'rejected',           'label': 'Rejected', 'align': 'center'},
         ]
-        rows = get_reservations()
-    else:
-        ui.label("My Reservations").classes("text-h4")
-        columns = [
-            {'name': 'reservation_id', 'field': 'reservation_id', 'label': 'Reservation ID'},
-            {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
-            {'name': 'start_datetime', 'field': 'start_datetime', 'label': 'Start'},
-            {'name': 'end_datetime', 'field': 'end_datetime', 'label': 'End'},
-            {'name': 'status', 'field': 'status', 'label': 'Status'},
-        ]
-        rows = get_user_reservations(app.storage.user['user_id'])
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-2'):
+            ui.table(columns=stats_columns, rows=get_reservation_stats()).classes('w-full')
 
-    ui.table(columns=columns, rows=rows)
+        ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg mt-2')
 
-    # Stats table — outside both blocks, visible to everyone
-    ui.label("Room Usage Summary").classes("text-h5 mt-6")
-    stats_columns = [
-        {'name': 'room_name', 'field': 'room_name', 'label': 'Room'},
-        {'name': 'total_reservations', 'field': 'total_reservations', 'label': 'Total'},
-        {'name': 'approved', 'field': 'approved', 'label': 'Approved'},
-        {'name': 'pending', 'field': 'pending', 'label': 'Pending'},
-        {'name': 'rejected', 'field': 'rejected', 'label': 'Rejected'},
-    ]
-    ui.table(columns=stats_columns, rows=get_reservation_stats())
-
-    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-4")
 
 # ── /reserve ───────────────────────────────────────────────────────────────────
 
@@ -531,74 +608,103 @@ def reserve_page():
     time_options     = generate_time_options()
     duration_options = generate_duration_options()
 
-    # Default start: next rounded 30-min slot
     now = datetime.now()
-    default_date = now.strftime("%Y-%m-%d")
+    default_date = now.strftime('%Y-%m-%d')
     rounded_min  = 30 * ((now.minute // 30) + 1)
     default_hour = now.hour + rounded_min // 60
     default_min  = rounded_min % 60
-    default_time_str = datetime(2000, 1, 1, default_hour % 24, default_min).strftime("%I:%M %p")
+    default_time_str = datetime(2000, 1, 1, default_hour % 24, default_min).strftime('%I:%M %p')
 
-    with ui.card() as step1_card:
-        ui.label("Make a Reservation").classes("text-h5")
-        if room_id:
-            ui.label(f"Pre-selected Room ID: {room_id}").classes("text-green-600 font-bold")
+    with ui.column().classes('w-full max-w-2xl mx-auto px-4 gap-5'):
 
-        ui.label("Date:").classes("font-semibold mt-2")
-        date_picker = ui.date(value=default_date).classes("w-full")
+        # Step indicator
+        def step_badge(n, active=False):
+            bg = '#9b1c1c' if active else '#e5e7eb'
+            color = 'text-white' if active else 'text-gray-400'
+            with ui.element('div').classes(f'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0').style(f'background:{bg}'):
+                ui.label(str(n)).classes(f'{color} font-bold text-sm')
 
-        ui.label("Start Time:").classes("font-semibold mt-2")
-        start_select = ui.select(
-            options=time_options,
-            value=default_time_str if default_time_str in time_options else time_options[16]
-        ).classes("w-full")
+        with ui.row().classes('items-center gap-2 w-full') as step_row:
+            s1_badge_wrap = ui.element('div').classes('flex items-center gap-2')
+            with s1_badge_wrap:
+                step_badge(1, active=True)
+                ui.label('Select Time').classes('text-gray-900 font-semibold text-sm')
+            ui.element('div').classes('flex-1 h-px bg-gray-200')
+            s2_badge_wrap = ui.element('div').classes('flex items-center gap-2')
+            with s2_badge_wrap:
+                step_badge(2, active=False)
+                ui.label('Choose Room').classes('text-gray-400 text-sm')
+            ui.element('div').classes('flex-1 h-px bg-gray-200')
+            s3_badge_wrap = ui.element('div').classes('flex items-center gap-2')
+            with s3_badge_wrap:
+                step_badge(3, active=False)
+                ui.label('Confirmed').classes('text-gray-400 text-sm')
 
-        ui.label("Duration (max 4 hours):").classes("font-semibold mt-2")
-        duration_select = ui.select(
-            options=duration_options,
-            value=duration_options[1]  # default 1 hour
-        ).classes("w-full")
+        # Step 1
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-6') as step1_card:
+            ui.label('Make a Reservation').classes('text-lg font-bold text-gray-900 mb-1')
+            if room_id:
+                with ui.row().classes('items-center gap-1 mb-3'):
+                    ui.icon('check_circle', size='1rem').style('color:#16a34a')
+                    ui.label(f'Pre-selected Room ID: {room_id}').classes('text-green-700 text-xs font-semibold')
 
-        error_label = ui.label("").classes("text-red-600 text-sm mt-1")
+            ui.label('Date').classes('text-xs font-semibold text-gray-700 mt-3 mb-1')
+            date_picker = ui.date(value=default_date).classes('w-full')
 
-        with ui.row().classes("gap-4 mt-4"):
-            ui.button("Go Back", on_click=lambda: ui.navigate.to("/rooms")).props("color=black")
-            ui.button("Search Available Rooms", on_click=lambda: process_step1()).props("color=green")
+            ui.label('Start Time').classes('text-xs font-semibold text-gray-700 mt-4 mb-1')
+            start_select = ui.select(
+                options=time_options,
+                value=default_time_str if default_time_str in time_options else time_options[16]
+            ).props('outlined dense').classes('w-full')
 
-    with ui.card() as step2_card:
-        ui.label("Available Rooms").classes("text-h5")
-        ui.label("").classes("text-sm text-gray-500")  # will show selected time range
+            ui.label('Duration (max 4 hours)').classes('text-xs font-semibold text-gray-700 mt-3 mb-1')
+            duration_select = ui.select(
+                options=duration_options,
+                value=duration_options[1]
+            ).props('outlined dense').classes('w-full')
 
-        columns = [
-            {'name': 'room_id',       'field': 'room_id',       'label': 'Room ID'},
-            {'name': 'room_name',     'field': 'room_name',      'label': 'Room Name'},
-            {'name': 'building_name', 'field': 'building_name',  'label': 'Building'},
-            {'name': 'capacity',      'field': 'capacity',       'label': 'Capacity'},
-            {'name': 'features',      'field': 'features',       'label': 'Features'},
-        ]
-        rooms_table = ui.table(
-            columns=columns, rows=[], selection='single',
-            row_key='room_id', on_select=lambda e: click_room(e)
-        )
-        time_range_label = ui.label("").classes("text-sm text-gray-600 mt-2")
+            error_label = ui.label('').classes('text-red-500 text-xs mt-2 min-h-[1rem]')
 
-        with ui.row().classes("gap-4 mt-4"):
-            ui.button("← Back", on_click=lambda: (
-                step1_card.set_visibility(True),
-                step2_card.set_visibility(False)
-            )).props("color=black")
-            ui.button("Reserve Selected Room", on_click=lambda: process_step2()).props("color=green")
+            with ui.row().classes('gap-3 mt-5'):
+                ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg')
+                ui.button('Search Available Rooms', on_click=lambda: process_step1()).props('color=primary no-caps unelevated').classes('rounded-lg font-semibold')
 
-    with ui.card() as step3_card:
-        ui.label("Reservation Submitted!").classes("text-h5")
-        ui.label("Your reservation is now pending approval.").classes("text-gray-600")
-        ui.button("View Reservations", on_click=lambda: ui.navigate.to("/reservations")).classes("bg-green-600 text-white")
-        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).props("color=black")
+        # Step 2
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-6') as step2_card:
+            ui.label('Available Rooms').classes('text-lg font-bold text-gray-900 mb-1')
+            time_range_label = ui.label('').classes('text-xs text-gray-500 mb-3')
+
+            columns = [
+                {'name': 'room_id',       'field': 'room_id',       'label': 'ID',       'align': 'left'},
+                {'name': 'room_name',     'field': 'room_name',     'label': 'Room',      'align': 'left'},
+                {'name': 'building_name', 'field': 'building_name', 'label': 'Building',  'align': 'left'},
+                {'name': 'capacity',      'field': 'capacity',      'label': 'Capacity',  'align': 'center'},
+                {'name': 'features',      'field': 'features',      'label': 'Features',  'align': 'left'},
+            ]
+            rooms_table = ui.table(
+                columns=columns, rows=[], selection='single',
+                row_key='room_id', on_select=lambda e: click_room(e)
+            ).classes('w-full')
+
+            with ui.row().classes('gap-3 mt-5'):
+                def go_back():
+                    step1_card.set_visibility(True)
+                    step2_card.set_visibility(False)
+                ui.button('← Back', on_click=go_back).props('color=primary outline no-caps').classes('rounded-lg')
+                ui.button('Reserve Selected Room', on_click=lambda: process_step2()).props('color=positive no-caps unelevated').classes('rounded-lg font-semibold')
+
+        # Step 3
+        with ui.card().classes('w-full rounded-2xl shadow-sm bg-white p-8 items-center text-center') as step3_card:
+            ui.icon('check_circle', size='3rem').style('color:#16a34a')
+            ui.label('Reservation Submitted!').classes('text-lg font-bold text-gray-900 mt-3')
+            ui.label('Your reservation is now pending approval.').classes('text-sm text-gray-500 mt-1 mb-5')
+            with ui.row().classes('justify-center gap-3'):
+                ui.button('View My Reservations', on_click=lambda: ui.navigate.to('/reservations')).props('color=primary no-caps unelevated').classes('rounded-lg font-semibold')
+                ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg')
 
     step2_card.set_visibility(False)
     step3_card.set_visibility(False)
 
-    # Store computed datetimes for step 2
     computed = {'start': None, 'end': None}
 
     def click_room(e):
@@ -612,25 +718,24 @@ def reserve_page():
         duration_lbl = duration_select.value
 
         if not date_str:
-            error_label.set_text("Please select a date.")
+            error_label.set_text('Please select a date.')
             return
 
         try:
             start_dt = parse_datetime(date_str, time_str)
         except Exception:
-            error_label.set_text("Invalid date or time selection.")
+            error_label.set_text('Invalid date or time selection.')
             return
 
         duration_mins = duration_label_to_minutes(duration_lbl)
         end_dt = start_dt + timedelta(minutes=duration_mins)
 
-        # Double-check 4-hour max (shouldn't be possible via UI but just in case)
         if duration_mins > 240:
-            error_label.set_text("Reservations cannot exceed 4 hours.")
+            error_label.set_text('Reservations cannot exceed 4 hours.')
             return
 
         if start_dt < datetime.now():
-            error_label.set_text("Start time must be in the future.")
+            error_label.set_text('Start time must be in the future.')
             return
 
         computed['start'] = start_dt
@@ -640,20 +745,20 @@ def reserve_page():
         rooms_table.rows = available_rooms
         rooms_table.update()
         time_range_label.set_text(
-            f"Showing rooms available from {start_dt.strftime('%b %d, %Y %I:%M %p')} "
+            f"Rooms available from {start_dt.strftime('%b %d, %Y %I:%M %p')} "
             f"to {end_dt.strftime('%I:%M %p')} ({duration_lbl})"
         )
 
-        error_label.set_text("")
+        error_label.set_text('')
         step1_card.set_visibility(False)
         step2_card.set_visibility(True)
 
     def process_step2():
         if selected_room is None:
-            ui.notify("Please select a room first.")
+            ui.notify('Please select a room first.', type='warning')
             return
         if not computed['start'] or not computed['end']:
-            ui.notify("Something went wrong. Please go back and try again.")
+            ui.notify('Something went wrong. Please go back and try again.', type='negative')
             return
 
         success = make_reservation(session_user_id, selected_room, computed['start'], computed['end'])
@@ -662,7 +767,8 @@ def reserve_page():
             step2_card.set_visibility(False)
             step3_card.set_visibility(True)
         else:
-            ui.notify("Sorry, that room was just booked by someone else. Please select another.", type="warning")
+            ui.notify('Sorry, that room was just booked by someone else. Please select another.', type='warning')
+
 
 # ── /admin ─────────────────────────────────────────────────────────────────────
 
@@ -671,41 +777,51 @@ def admin_page():
     if not require_login():
         return
     if current_role() != 'admin':
-        ui.label("Access denied.").classes("text-red-600 text-h5 text-center mt-8")
-        ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white mt-4")
+        with ui.column().classes('items-center mt-16 gap-3'):
+            ui.icon('lock', size='3rem').classes('text-gray-300')
+            ui.label('Access Denied').classes('text-xl font-bold text-gray-700')
+            ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg mt-2')
         return
 
     render_nav_bar()
-    ui.label("Admin Panel — Pending Reservations").classes("text-h4 mt-2 mb-4")
 
     admin_id = app.storage.user.get('user_id')
 
-    table_container = ui.column().classes("w-full max-w-5xl mx-auto gap-3")
+    with ui.column().classes('w-full max-w-5xl mx-auto px-4 gap-4'):
+        with ui.row().classes('items-center gap-3'):
+            ui.label('Admin Panel').classes('text-xl font-bold text-gray-900')
+            count_badge = ui.badge('0', color='red')
+        ui.label('Review and action pending reservations below.').classes('text-sm text-gray-500')
 
-    def refresh():
-        table_container.clear()
-        pending = get_pending_reservations()
-        with table_container:
-            if not pending:
-                ui.label("No pending reservations.").classes("text-gray-500 text-center mt-8")
-                return
-            for res in pending:
-                with ui.card().classes("w-full p-4"):
-                    with ui.row().classes("w-full items-center justify-between"):
-                        with ui.column():
-                            ui.label(f"Reservation #{res['reservation_id']}").classes("font-bold text-lg")
-                            ui.label(f"User: {res['user_name']}")
-                            ui.label(f"Room: {res['room_name']}")
-                            ui.label(f"From: {res['start_datetime'].strftime('%b %d, %Y %I:%M %p')}")
-                            ui.label(f"To:   {res['end_datetime'].strftime('%b %d, %Y %I:%M %p')}")
-                        with ui.row().classes("gap-2"):
-                            rid = res['reservation_id']
-                            ui.button("Approve", on_click=lambda r=rid: (approve_reservation(r, admin_id), refresh())).classes("bg-green-600 text-white")
-                            ui.button("Reject",  on_click=lambda r=rid: (reject_reservation(r, admin_id),  refresh())).classes("bg-red-600 text-white")
+        table_container = ui.column().classes('w-full gap-3')
 
-    refresh()
+        def refresh():
+            table_container.clear()
+            pending = get_pending_reservations()
+            count_badge.set_text(str(len(pending)))
+            with table_container:
+                if not pending:
+                    with ui.column().classes('items-center mt-10 gap-2'):
+                        ui.icon('check_circle', size='3rem').classes('text-gray-300')
+                        ui.label('No pending reservations.').classes('text-gray-400')
+                    return
+                for res in pending:
+                    with ui.card().classes('w-full rounded-xl bg-white shadow-sm border-l-4 border-yellow-400'):
+                        with ui.row().classes('w-full items-center justify-between p-4'):
+                            with ui.column().classes('gap-1'):
+                                ui.label(f"Reservation #{res['reservation_id']}").classes('text-gray-900 font-semibold text-sm')
+                                with ui.row().classes('gap-4 flex-wrap'):
+                                    ui.label(f"User: {res['user_name']}").classes('text-gray-500 text-xs')
+                                    ui.label(f"Room: {res['room_name']}").classes('text-gray-500 text-xs')
+                                ui.label(f"From: {res['start_datetime'].strftime('%b %d, %Y %I:%M %p')}  →  {res['end_datetime'].strftime('%I:%M %p')}").classes('text-gray-500 text-xs')
+                            with ui.row().classes('gap-2'):
+                                rid = res['reservation_id']
+                                ui.button('Approve', on_click=lambda r=rid: (approve_reservation(r, admin_id), refresh())).props('color=positive no-caps unelevated').classes('rounded-lg px-4 text-xs font-medium')
+                                ui.button('Reject',  on_click=lambda r=rid: (reject_reservation(r, admin_id),  refresh())).props('color=negative no-caps unelevated').classes('rounded-lg px-4 text-xs font-medium')
 
-    ui.button("Back Home", on_click=lambda: ui.navigate.to("/")).classes("bg-black text-white w-48 mt-6")
+        refresh()
+
+        ui.button('Back Home', on_click=lambda: ui.navigate.to('/')).props('color=primary outline no-caps').classes('rounded-lg mt-2')
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
