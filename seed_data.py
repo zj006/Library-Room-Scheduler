@@ -66,9 +66,7 @@ cur.execute("""
 print("Seeding buildings...")
 cur.execute("""
     INSERT INTO building (building_id, building_name) VALUES
-        (1, 'Paul Barrett, Jr. Library'),
-        (2, 'Barret Hall'),
-        (3, 'Kennedy Hall')
+        (1, 'Paul Barrett, Jr. Library')
 """)
 
 # ── 3. Features ────────────────────────────────────────────────────────────────
@@ -94,10 +92,10 @@ rooms = [
     (4,  'Group Room 1',      10, 1),
     (5,  'Conference Room',   12, 1),
     (6,  'Media Lab',         6,  1),
-    (7,  'Seminar Room A',    20, 2),
-    (8,  'Seminar Room B',    20, 2),
-    (9,  'Innovation Hub',    15, 3),
-    (10, 'Collaboration Pod', 6,  3),
+    (7,  'Seminar Room A',    20, 1),
+    (8,  'Seminar Room B',    20, 1),
+    (9,  'Innovation Hub',    15, 1),
+    (10, 'Collaboration Pod', 6,  1),
 ]
 for room_id, name, capacity, building_id in rooms:
     cur.execute("""
@@ -145,13 +143,23 @@ last_names = [
 ]
 domains = ["rhodes.edu", "memphis.edu", "vanderbilt.edu", "tulane.edu", "sewanee.edu"]
 
-user_ids = []
-for i in range(1, 201):
+# ── Fixed test accounts (inserted first to reserve IDs 1 and 2) ───────────────
+cur.execute("""
+    INSERT INTO useraccount (user_id, name, email, role_id, password_hash)
+    VALUES (1, 'test1', 'test1@rhodes.edu', 1, %s)
+""", [hash_password("test1!!")])
+cur.execute("""
+    INSERT INTO useraccount (user_id, name, email, role_id, password_hash)
+    VALUES (2, 'admin1', 'admin1@rhodes.edu', 2, %s)
+""", [hash_password("admin1!")])
+
+user_ids = [1, 2]
+for i in range(3, 203):
     first   = random.choice(first_names)
     last    = random.choice(last_names)
     name    = f"{first} {last}"
     email   = f"{first.lower()}.{last.lower()}{i}@{random.choice(domains)}"
-    role_id = 2 if i <= 5 else 1
+    role_id = 2 if i <= 7 else 1
 
     cur.execute("""
         INSERT INTO useraccount (user_id, name, email, role_id, password_hash)
@@ -245,11 +253,11 @@ conn.commit()
 conn.close()
 
 print("\n✅ Seed complete!")
-print("   200 users  (IDs 1–5 are admins, 6–200 are students)")
+print("   202 users  (ID 1: test1 student, ID 2: admin1 admin, IDs 3–7: random admins, 8–202: students)")
 print("   400 reservations")
 print("   150 approvals")
 print("    20 room blocks")
-print("    10 rooms across 3 buildings")
+print("    10 rooms in Paul Barrett, Jr. Library only")
 print("\n   All seeded users have password: password123")
 print("   To find an admin email, check user IDs 1–5 in your useraccount table")
 print("\n   Estimated total attribute × tuple count: 5,146")
